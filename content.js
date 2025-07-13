@@ -349,12 +349,15 @@ class ETAContentScript {
       invoice.buyerAddress = invoice.buyerName ? 'غير محدد' : '';
       invoice.purchaseOrderDesc = '';
       invoice.salesOrderRef = '';
+      invoice.salesOrderDesc = '';
       invoice.electronicSignature = 'موقع إلكترونياً';
-      invoice.foodDrugGuide = '';
       
-      // Generate external link if electronic number exists
-      if (invoice.electronicNumber) {
-        invoice.externalLink = `https://invoicing.eta.gov.eg/documents/${invoice.electronicNumber}`;
+      // Extract shareId from submission link if available
+      if (submissionCell && submissionCell.querySelector('.submissionId-link')) {
+        const submissionLink = submissionCell.querySelector('.submissionId-link');
+        if (submissionLink) {
+          invoice.purchaseOrderRef = submissionLink.textContent?.trim() || '';
+        }
       }
       
     } catch (error) {

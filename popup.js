@@ -423,8 +423,8 @@ class ETAInvoiceExporter {
   generateCompleteExcelFile(data, options) {
     const wb = XLSX.utils.book_new();
     
-    // Create main summary sheet with all columns
-    this.createCompleteSummarySheet(wb, data, options);
+    // Create main summary sheet with exact required format
+    this.createExactFormatSummarySheet(wb, data, options);
     
     // Create details sheets for each invoice if requested
     if (options.downloadDetails) {
@@ -441,101 +441,135 @@ class ETAInvoiceExporter {
     XLSX.writeFile(wb, filename);
   }
   
-  createCompleteSummarySheet(wb, data, options) {
-    // Complete headers matching the images exactly (A to Z and beyond)
+  createExactFormatSummarySheet(wb, data, options) {
+    // Exact headers as specified in requirements - in this exact order
     const allHeaders = [
-      'مسلسل',                          // A: Serial Number
-      'تفاصيل',                        // B: Details Button
-      'نوع المستند',                    // C: Document Type
-      'نسخة المستند',                   // D: Document Version
-      'الحالة',                        // E: Status
-      'تاريخ الإصدار',                  // F: Issue Date
-      'تاريخ التقديم',                  // G: Submission Date
-      'عملة الفاتورة',                  // H: Invoice Currency
-      'قيمة الفاتورة',                  // I: Invoice Value
-      'ضريبة القيمة المضافة',            // J: VAT Amount
-      'الخصم تحت حساب الضريبة',          // K: Tax Discount
-      'إجمالي الفاتورة',                // L: Total Invoice
-      'الرقم الداخلي',                  // M: Internal Number
-      'الرقم الإلكتروني',               // N: Electronic Number
-      'الرقم الضريبي للبائع',            // O: Seller Tax Number
-      'اسم البائع',                    // P: Seller Name
-      'عنوان البائع',                  // Q: Seller Address
-      'الرقم الضريبي للمشتري',          // R: Buyer Tax Number
-      'اسم المشتري',                   // S: Buyer Name
-      'عنوان المشتري',                 // T: Buyer Address
-      'مرجع طلب الشراء',               // U: Purchase Order Reference
-      'وصف طلب الشراء',                // V: Purchase Order Description
-      'مرجع طلب المبيعات',             // W: Sales Order Reference
-      'التوقيع الإلكتروني',             // X: Electronic Signature
-      'دليل الغذاء والدواء ومستلزمات المطاعم', // Y: Food Drug Guide
-      'الرابط الخارجي'                  // Z: External Link
+      'مسلسل',
+      'تفاصيل', 
+      'نوع المستند',
+      'نسخة المستند',
+      'الحالة',
+      'تاريخ الإصدار',
+      'تاريخ التقديم',
+      'عملة الفاتورة',
+      'قيمة الفاتورة',
+      'ضريبة القيمة المضافة',
+      'الخصم تحت حساب الضريبة',
+      'إجمالى الفاتورة',
+      'الرقم الداخلى',
+      'الرقم الإلكترونى',
+      'الرقم الضريبى للبائع',
+      'إسم البائع',
+      'عنوان البائع',
+      'الرقم الضريبى للمشترى',
+      'إسم المشترى',
+      'عنوان المشترى',
+      'مرجع طلب الشراء',
+      'وصف طلب الشراء',
+      'مرجع طلب المبيعات',
+      'وصف طلب المبيعات',
+      'التوقيع الإلكترونى',
+      'الرابط الخارجى'
     ];
 
-    // Filter headers based on selected options
-    const selectedHeaders = [];
-    const selectedFields = [];
-    
-    const fieldMapping = [
-      { key: 'serialNumber', header: 'مسلسل', field: 'serialNumber' },
-      { key: 'detailsButton', header: 'تفاصيل', field: 'detailsButton' },
-      { key: 'documentType', header: 'نوع المستند', field: 'documentType' },
-      { key: 'documentVersion', header: 'نسخة المستند', field: 'documentVersion' },
-      { key: 'status', header: 'الحالة', field: 'status' },
-      { key: 'issueDate', header: 'تاريخ الإصدار', field: 'issueDate' },
-      { key: 'submissionDate', header: 'تاريخ التقديم', field: 'submissionDate' },
-      { key: 'invoiceCurrency', header: 'عملة الفاتورة', field: 'invoiceCurrency' },
-      { key: 'invoiceValue', header: 'قيمة الفاتورة', field: 'invoiceValue' },
-      { key: 'vatAmount', header: 'ضريبة القيمة المضافة', field: 'vatAmount' },
-      { key: 'taxDiscount', header: 'الخصم تحت حساب الضريبة', field: 'taxDiscount' },
-      { key: 'totalInvoice', header: 'إجمالي الفاتورة', field: 'totalInvoice' },
-      { key: 'internalNumber', header: 'الرقم الداخلي', field: 'internalNumber' },
-      { key: 'electronicNumber', header: 'الرقم الإلكتروني', field: 'electronicNumber' },
-      { key: 'sellerTaxNumber', header: 'الرقم الضريبي للبائع', field: 'sellerTaxNumber' },
-      { key: 'sellerName', header: 'اسم البائع', field: 'sellerName' },
-      { key: 'sellerAddress', header: 'عنوان البائع', field: 'sellerAddress' },
-      { key: 'buyerTaxNumber', header: 'الرقم الضريبي للمشتري', field: 'buyerTaxNumber' },
-      { key: 'buyerName', header: 'اسم المشتري', field: 'buyerName' },
-      { key: 'buyerAddress', header: 'عنوان المشتري', field: 'buyerAddress' },
-      { key: 'purchaseOrderRef', header: 'مرجع طلب الشراء', field: 'purchaseOrderRef' },
-      { key: 'purchaseOrderDesc', header: 'وصف طلب الشراء', field: 'purchaseOrderDesc' },
-      { key: 'salesOrderRef', header: 'مرجع طلب المبيعات', field: 'salesOrderRef' },
-      { key: 'electronicSignature', header: 'التوقيع الإلكتروني', field: 'electronicSignature' },
-      { key: 'foodDrugGuide', header: 'دليل الغذاء والدواء ومستلزمات المطاعم', field: 'foodDrugGuide' },
-      { key: 'externalLink', header: 'الرابط الخارجي', field: 'externalLink' }
-    ];
 
-    fieldMapping.forEach(mapping => {
-      if (options[mapping.key]) {
-        selectedHeaders.push(mapping.header);
-        selectedFields.push(mapping.field);
-      }
-    });
 
-    // Always add page number for multi-page exports
+    // Add page number for multi-page exports
     if (options.downloadAll) {
-      selectedHeaders.push('رقم الصفحة');
-      selectedFields.push('pageNumber');
+      allHeaders.push('رقم الصفحة');
     }
 
-    const rows = [selectedHeaders];
+    const rows = [allHeaders];
     
     data.forEach((invoice, index) => {
-      const row = selectedFields.map(field => {
-        if (field === 'serialNumber') {
-          return index + 1;
-        }
-        return invoice[field] || '';
-      });
+      const row = [
+        index + 1, // مسلسل
+        'عرض', // تفاصيل - always "عرض"
+        invoice.documentType || 'فاتورة', // نوع المستند
+        invoice.documentVersion || '1.0', // نسخة المستند
+        invoice.status || '', // الحالة
+        invoice.issueDate || '', // تاريخ الإصدار
+        invoice.submissionDate || invoice.issueDate || '', // تاريخ التقديم
+        invoice.invoiceCurrency || 'EGP', // عملة الفاتورة
+        invoice.invoiceValue || '', // قيمة الفاتورة
+        invoice.vatAmount || '', // ضريبة القيمة المضافة
+        invoice.taxDiscount || '0', // الخصم تحت حساب الضريبة
+        invoice.totalInvoice || '', // إجمالى الفاتورة
+        invoice.internalNumber || '', // الرقم الداخلى
+        invoice.electronicNumber || '', // الرقم الإلكترونى
+        invoice.sellerTaxNumber || '', // الرقم الضريبى للبائع
+        invoice.sellerName || '', // إسم البائع
+        invoice.sellerAddress || '', // عنوان البائع
+        invoice.buyerTaxNumber || '', // الرقم الضريبى للمشترى
+        invoice.buyerName || '', // إسم المشترى
+        invoice.buyerAddress || '', // عنوان المشترى
+        invoice.purchaseOrderRef || '', // مرجع طلب الشراء
+        invoice.purchaseOrderDesc || '', // وصف طلب الشراء
+        invoice.salesOrderRef || '', // مرجع طلب المبيعات
+        invoice.salesOrderDesc || '', // وصف طلب المبيعات
+        invoice.electronicSignature || 'موقع إلكترونياً', // التوقيع الإلكترونى
+        this.generateExternalLink(invoice) // الرابط الخارجى
+      ];
+      
+      // Add page number if downloading all pages
+      if (options.downloadAll) {
+        row.push(invoice.pageNumber || 1);
+      }
+      
       rows.push(row);
     });
     
     const ws = XLSX.utils.aoa_to_sheet(rows);
     
-    // Format the worksheet
-    this.formatCompleteWorksheet(ws, selectedHeaders, data.length);
+    // Add hyperlinks to the "تفاصيل" column (column B)
+    this.addHyperlinksToDetailsColumn(ws, data);
     
-    XLSX.utils.book_append_sheet(wb, ws, 'ملخص الفواتير الكامل');
+    // Format the worksheet
+    this.formatCompleteWorksheet(ws, allHeaders, data.length);
+    
+    XLSX.utils.book_append_sheet(wb, ws, 'فواتير مصلحة الضرائب');
+  }
+  
+  generateExternalLink(invoice) {
+    if (!invoice.electronicNumber) {
+      return '';
+    }
+    
+    // Try to extract shareId from submission link or generate a placeholder
+    let shareId = '';
+    if (invoice.purchaseOrderRef && invoice.purchaseOrderRef.length > 10) {
+      shareId = invoice.purchaseOrderRef;
+    } else {
+      // Generate a placeholder shareId based on electronic number
+      shareId = invoice.electronicNumber.replace(/[^A-Z0-9]/g, '').substring(0, 26);
+    }
+    
+    return `https://invoicing.eta.gov.eg/documents/${invoice.electronicNumber}/share/${shareId}`;
+  }
+  
+  addHyperlinksToDetailsColumn(ws, data) {
+    // Add hyperlinks to the "تفاصيل" column (column B, index 1)
+    data.forEach((invoice, index) => {
+      const rowIndex = index + 2; // +2 because Excel is 1-indexed and we have a header row
+      const cellAddress = XLSX.utils.encode_cell({ r: rowIndex - 1, c: 1 }); // Column B (index 1)
+      
+      if (ws[cellAddress] && invoice.electronicNumber) {
+        const detailsUrl = `https://invoicing.eta.gov.eg/documents/${invoice.electronicNumber}`;
+        
+        // Set the cell as a hyperlink
+        ws[cellAddress].l = { Target: detailsUrl, Tooltip: 'عرض تفاصيل الفاتورة' };
+        
+        // Style the hyperlink
+        ws[cellAddress].s = {
+          font: { 
+            color: { rgb: "0000FF" }, 
+            underline: true,
+            bold: false
+          },
+          alignment: { horizontal: "center", vertical: "center" }
+        };
+      }
+    });
   }
   
   formatCompleteWorksheet(ws, headers, dataLength) {
@@ -544,17 +578,21 @@ class ETAInvoiceExporter {
       switch (header) {
         case 'مسلسل': return { wch: 8 };
         case 'تفاصيل': return { wch: 10 };
-        case 'الرقم الإلكتروني': return { wch: 30 };
-        case 'الرابط الخارجي': return { wch: 50 };
-        case 'اسم البائع':
-        case 'اسم المشتري': return { wch: 25 };
+        case 'الرقم الإلكترونى': return { wch: 30 };
+        case 'الرابط الخارجى': return { wch: 50 };
+        case 'إسم البائع':
+        case 'إسم المشترى': return { wch: 25 };
         case 'عنوان البائع':
-        case 'عنوان المشتري': return { wch: 30 };
-        case 'الرقم الضريبي للبائع':
-        case 'الرقم الضريبي للمشتري': return { wch: 20 };
+        case 'عنوان المشترى': return { wch: 30 };
+        case 'الرقم الضريبى للبائع':
+        case 'الرقم الضريبى للمشترى': return { wch: 20 };
         case 'تاريخ الإصدار':
         case 'تاريخ التقديم': return { wch: 18 };
-        case 'دليل الغذاء والدواء ومستلزمات المطاعم': return { wch: 35 };
+        case 'الرقم الداخلى': return { wch: 15 };
+        case 'إجمالى الفاتورة':
+        case 'قيمة الفاتورة': return { wch: 15 };
+        case 'ضريبة القيمة المضافة': return { wch: 18 };
+        case 'التوقيع الإلكترونى': return { wch: 15 };
         default: return { wch: 15 };
       }
     });
@@ -568,8 +606,8 @@ class ETAInvoiceExporter {
       if (!ws[cellAddress]) continue;
       
       ws[cellAddress].s = {
-        font: { bold: true, color: { rgb: "FFFFFF" } },
-        fill: { fgColor: { rgb: "366092" } },
+        font: { bold: true, color: { rgb: "FFFFFF" }, size: 12 },
+        fill: { fgColor: { rgb: "1F4E79" } },
         alignment: { horizontal: "center", vertical: "center" },
         border: {
           top: { style: "thin", color: { rgb: "000000" } },
@@ -578,6 +616,28 @@ class ETAInvoiceExporter {
           right: { style: "thin", color: { rgb: "000000" } }
         }
       };
+    }
+    
+    // Style data rows with alternating colors
+    for (let row = 1; row <= range.e.r; row++) {
+      const isEvenRow = row % 2 === 0;
+      const fillColor = isEvenRow ? "F8F9FA" : "FFFFFF";
+      
+      for (let col = range.s.c; col <= range.e.c; col++) {
+        const cellAddress = XLSX.utils.encode_cell({ r: row, c: col });
+        if (!ws[cellAddress]) continue;
+        
+        if (!ws[cellAddress].s) ws[cellAddress].s = {};
+        
+        ws[cellAddress].s.fill = { fgColor: { rgb: fillColor } };
+        ws[cellAddress].s.alignment = { horizontal: "center", vertical: "center" };
+        ws[cellAddress].s.border = {
+          top: { style: "thin", color: { rgb: "E0E0E0" } },
+          bottom: { style: "thin", color: { rgb: "E0E0E0" } },
+          left: { style: "thin", color: { rgb: "E0E0E0" } },
+          right: { style: "thin", color: { rgb: "E0E0E0" } }
+        };
+      }
     }
   }
   
