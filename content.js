@@ -547,29 +547,124 @@ class ETAContentScript {
   
   async getInvoiceDetails(invoiceId) {
     try {
-      // This would need to be implemented to click on the "عرض" button
-      // and extract detailed invoice line items
-      const mockDetails = [
-        {
-          itemName: 'صنف تجريبي',
-          unitCode: 'EA',
-          unitName: 'قطعة',
-          quantity: '1',
-          unitPrice: '100',
-          totalValue: '100',
-          vatAmount: '14',
-          totalWithVat: '114'
-        }
-      ];
+      // Navigate to invoice details page
+      const detailsUrl = `https://invoicing.eta.gov.eg/documents/${invoiceId}`;
+      
+      // Open details page in a new tab temporarily
+      const originalUrl = window.location.href;
+      window.location.href = detailsUrl;
+      
+      // Wait for page to load
+      await this.waitForPageLoad();
+      
+      // Extract invoice details
+      const details = this.extractInvoiceDetailsFromPage();
+      
+      // Return to original page
+      window.location.href = originalUrl;
+      await this.waitForPageLoad();
       
       return {
         success: true,
-        data: mockDetails
+        data: details
       };
     } catch (error) {
       console.error('Error getting invoice details:', error);
       return { success: false, data: [] };
     }
+  }
+  
+  extractInvoiceDetailsFromPage() {
+    const details = [];
+    
+    try {
+      // Look for invoice line items table
+      const itemsTable = document.querySelector('.invoice-items-table, .ms-DetailsList, [data-automation-id="DetailsList"]');
+      
+      if (itemsTable) {
+        const rows = itemsTable.querySelectorAll('.ms-DetailsRow[role="row"], tr');
+        
+        rows.forEach(row => {
+          const cells = row.querySelectorAll('.ms-DetailsRow-cell, td');
+          
+          if (cells.length >= 6) {
+            const item = {
+              itemName: this.extractCellText(cells[0]) || '',
+              unitCode: this.extractCellText(cells[1]) || 'EA',
+              unitName: this.extractCellText(cells[2]) || 'قطعة',
+              quantity: this.extractCellText(cells[3]) || '1',
+              unitPrice: this.extractCellText(cells[4]) || '0',
+              totalValue: this.extractCellText(cells[5]) || '0',
+              vatAmount: this.calculateVAT(this.extractCellText(cells[5])),
+              totalWithVat: this.calculateTotalWithVAT(this.extractCellText(cells[5]))
+            };
+            
+            if (item.itemName && item.itemName !== 'اسم الصنف') {
+              details.push(item);
+            }
+          }
+        });
+      }
+      
+      // If no items found in table, try to extract from summary
+      if (details.length === 0) {
+        const summaryData = this.extractSummaryAsItems();
+        details.push(...summaryData);
+      }
+      
+    } catch (error) {
+      console.error('Error extracting invoice details:', error);
+    }
+    
+    return details;
+  }
+  
+  extractCellText(cell) {
+    if (!cell) return '';
+    
+    // Try different selectors for cell content
+    const textElement = cell.querySelector('.griCellTitle, .griCellTitleGray, .ms-DetailsRow-cellContent') || cell;
+    return textElement.textContent?.trim() || '';
+  }
+  
+  calculateVAT(totalValue) {
+    const value = parseFloat(totalValue?.replace(/,/g, '') || 0);
+    // Assuming 14% VAT rate (common in Egypt)
+    return (value * 0.14 / 1.14).toFixed(2);
+  }
+  
+  calculateTotalWithVAT(baseValue) {
+    const value = parseFloat(baseValue?.replace(/,/g, '') || 0);
+    const vat = parseFloat(this.calculateVAT(baseValue));
+    return (value + vat).toFixed(2);
+  }
+  
+  extractSummaryAsItems() {
+    // If detailed items are not available, create a summary item
+    const summaryItems = [];
+    
+    try {
+      // Extract basic invoice info as a single line item
+      const totalElement = document.querySelector('[data-automation-key="total"] .griCellTitleGray');
+      const total = totalElement?.textContent?.trim() || '0';
+      
+      if (parseFloat(total.replace(/,/g, '')) > 0) {
+        summaryItems.push({
+          itemName: 'إجمالي الفاتورة',
+          unitCode: 'EA',
+          unitName: 'قطعة',
+          quantity: '1',
+          unitPrice: total,
+          totalValue: total,
+          vatAmount: this.calculateVAT(total),
+          totalWithVat: total
+        });
+      }
+    } catch (error) {
+      console.error('Error extracting summary items:', error);
+    }
+    
+    return summaryItems;
   }
   
   getInvoiceData() {
