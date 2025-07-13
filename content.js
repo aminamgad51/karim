@@ -547,22 +547,8 @@ class ETAContentScript {
   
   async getInvoiceDetails(invoiceId) {
     try {
-      // Navigate to invoice details page
-      const detailsUrl = `https://invoicing.eta.gov.eg/documents/${invoiceId}`;
-      
-      // Open details page in a new tab temporarily
-      const originalUrl = window.location.href;
-      window.location.href = detailsUrl;
-      
-      // Wait for page to load
-      await this.waitForPageLoad();
-      
-      // Extract invoice details
-      const details = this.extractInvoiceDetailsFromPage();
-      
-      // Return to original page
-      window.location.href = originalUrl;
-      await this.waitForPageLoad();
+      // Use API call instead of page navigation
+      const details = await this.fetchInvoiceDetailsViaAPI(invoiceId);
       
       return {
         success: true,
@@ -572,6 +558,231 @@ class ETAContentScript {
       console.error('Error getting invoice details:', error);
       return { success: false, data: [] };
     }
+  }
+  
+  async fetchInvoiceDetailsViaAPI(invoiceId) {
+    try {
+      // Method 1: Try to fetch from the API endpoint
+      const apiUrl = `https://invoicing.eta.gov.eg/api/v1/documents/${invoiceId}`;
+      
+      const response = await fetch(apiUrl, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          // Copy existing session cookies
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        credentials: 'include'
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        return this.parseAPIInvoiceDetails(data);
+      }
+      
+      // Method 2: Try alternative endpoint
+      return await this.fetchInvoiceDetailsAlternative(invoiceId);
+      
+    } catch (error) {
+      console.warn('API fetch failed, trying alternative method:', error);
+      return await this.fetchInvoiceDetailsAlternative(invoiceId);
+    }
+  }
+  
+  async fetchInvoiceDetailsAlternative(invoiceId) {
+    try {
+      // Method 3: Use iframe to load details without affecting main page
+      return await this.fetchInvoiceDetailsViaIframe(invoiceId);
+    } catch (error) {
+      console.warn('Iframe method failed, extracting from current page data:', error);
+      return this.extractDetailsFromCurrentPageData(invoiceId);
+    }
+  }
+  
+  async fetchInvoiceDetailsViaIframe(invoiceId) {
+    return new Promise((resolve, reject) => {
+      // Create hidden iframe
+      const iframe = document.createElement('iframe');
+      iframe.style.display = 'none';
+      iframe.style.width = '0px';
+      iframe.style.height = '0px';
+      
+      const detailsUrl = `https://invoicing.eta.gov.eg/documents/${invoiceId}`;
+      
+      iframe.onload = () => {
+        try {
+          // Wait a bit for content to load
+          setTimeout(() => {
+            try {
+              const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+              const details = this.extractInvoiceDetailsFromDocument(iframeDoc);
+              
+              // Clean up
+              document.body.removeChild(iframe);
+              resolve(details);
+            } catch (error) {
+              document.body.removeChild(iframe);
+              reject(error);
+            }
+          }, 2000);
+        } catch (error) {
+          document.body.removeChild(iframe);
+          reject(error);
+        }
+      };
+      
+      iframe.onerror = () => {
+        document.body.removeChild(iframe);
+        reject(new Error('Failed to load iframe'));
+      };
+      
+      // Add to page and load
+      document.body.appendChild(iframe);
+      iframe.src = detailsUrl;
+      
+      // Timeout after 10 seconds
+      setTimeout(() => {
+        if (document.body.contains(iframe)) {
+          document.body.removeChild(iframe);
+          reject(new Error('Iframe timeout'));
+        }
+      }, 10000);
+    });
+  }
+  
+  parseAPIInvoiceDetails(apiData) {
+    const details = [];
+    
+    try {
+      // Parse API response structure
+      if (apiData.invoiceLines && Array.isArray(apiData.invoiceLines)) {
+        apiData.invoiceLines.forEach(line => {
+          details.push({
+            itemName: line.description || line.itemName || '',
+            unitCode: line.unitType?.code || 'EA',
+            unitName: line.unitType?.name || 'قطعة',
+            quantity: line.quantity || '1',
+            unitPrice: line.unitValue?.amount || '0',
+            totalValue: line.salesTotal || '0',
+            vatAmount: line.taxTotals?.find(tax => tax.taxType === 'T1')?.amount || '0',
+            totalWithVat: line.netTotal || '0'
+          });
+        });
+      }
+      
+      // If no line items, create summary item
+      if (details.length === 0 && apiData.totalAmount) {
+        details.push({
+          itemName: 'إجمالي الفاتورة',
+          unitCode: 'EA',
+          unitName: 'قطعة',
+          quantity: '1',
+          unitPrice: apiData.totalAmount,
+          totalValue: apiData.totalAmount,
+          vatAmount: this.calculateVAT(apiData.totalAmount),
+          totalWithVat: apiData.totalAmount
+        });
+      }
+      
+    } catch (error) {
+      console.error('Error parsing API data:', error);
+    }
+    
+    return details;
+  }
+  
+  extractInvoiceDetailsFromDocument(doc) {
+    const details = [];
+    
+    try {
+      // Look for invoice line items table in the document
+      const itemsTable = doc.querySelector('.invoice-items-table, .ms-DetailsList, [data-automation-id="DetailsList"]');
+      
+      if (itemsTable) {
+        const rows = itemsTable.querySelectorAll('.ms-DetailsRow[role="row"], tr');
+        
+        rows.forEach(row => {
+          const cells = row.querySelectorAll('.ms-DetailsRow-cell, td');
+          
+          if (cells.length >= 6) {
+            const item = {
+              itemName: this.extractCellText(cells[0]) || '',
+              unitCode: this.extractCellText(cells[1]) || 'EA',
+              unitName: this.extractCellText(cells[2]) || 'قطعة',
+              quantity: this.extractCellText(cells[3]) || '1',
+              unitPrice: this.extractCellText(cells[4]) || '0',
+              totalValue: this.extractCellText(cells[5]) || '0',
+              vatAmount: this.calculateVAT(this.extractCellText(cells[5])),
+              totalWithVat: this.calculateTotalWithVAT(this.extractCellText(cells[5]))
+            };
+            
+            if (item.itemName && item.itemName !== 'اسم الصنف') {
+              details.push(item);
+            }
+          }
+        });
+      }
+      
+      // If no items found, try to extract from summary
+      if (details.length === 0) {
+        const summaryData = this.extractSummaryFromDocument(doc);
+        details.push(...summaryData);
+      }
+      
+    } catch (error) {
+      console.error('Error extracting from document:', error);
+    }
+    
+    return details;
+  }
+  
+  extractDetailsFromCurrentPageData(invoiceId) {
+    // Extract what we can from the current page data
+    const invoice = this.invoiceData.find(inv => inv.electronicNumber === invoiceId);
+    
+    if (!invoice) {
+      return [];
+    }
+    
+    // Create a summary item based on available data
+    return [{
+      itemName: 'إجمالي الفاتورة',
+      unitCode: 'EA',
+      unitName: 'قطعة',
+      quantity: '1',
+      unitPrice: invoice.totalInvoice || '0',
+      totalValue: invoice.invoiceValue || invoice.totalInvoice || '0',
+      vatAmount: invoice.vatAmount || this.calculateVAT(invoice.totalInvoice),
+      totalWithVat: invoice.totalInvoice || '0'
+    }];
+  }
+  
+  extractSummaryFromDocument(doc) {
+    const summaryItems = [];
+    
+    try {
+      // Extract basic invoice info as a single line item
+      const totalElement = doc.querySelector('[data-automation-key="total"] .griCellTitleGray, .total-amount');
+      const total = totalElement?.textContent?.trim() || '0';
+      
+      if (parseFloat(total.replace(/,/g, '')) > 0) {
+        summaryItems.push({
+          itemName: 'إجمالي الفاتورة',
+          unitCode: 'EA',
+          unitName: 'قطعة',
+          quantity: '1',
+          unitPrice: total,
+          totalValue: total,
+          vatAmount: this.calculateVAT(total),
+          totalWithVat: total
+        });
+      }
+    } catch (error) {
+      console.error('Error extracting summary from document:', error);
+    }
+    
+    return summaryItems;
   }
   
   extractInvoiceDetailsFromPage() {

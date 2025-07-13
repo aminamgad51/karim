@@ -373,34 +373,45 @@ class ETAInvoiceExporter {
   }
   
   async loadInvoiceDetails(invoices) {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     const detailedInvoices = [];
+    const batchSize = 5; // Process 5 invoices at a time
     
-    for (let i = 0; i < invoices.length; i++) {
-      const invoice = invoices[i];
-      this.showStatus(`جاري تحميل تفاصيل الفاتورة ${i + 1} من ${invoices.length}...`, 'loading');
-      
-      try {
-        const detailResponse = await chrome.tabs.sendMessage(tab.id, {
-          action: 'getInvoiceDetails',
-          invoiceId: invoice.electronicNumber
-        });
+    // Process invoices in batches to avoid overwhelming the server
+    for (let i = 0; i < invoices.length; i += batchSize) {
+      const batch = invoices.slice(i, i + batchSize);
+      const batchPromises = batch.map(async (invoice, batchIndex) => {
+        const globalIndex = i + batchIndex;
+        this.showStatus(`جاري تحميل تفاصيل الفاتورة ${globalIndex + 1} من ${invoices.length}...`, 'loading');
         
-        if (detailResponse && detailResponse.success) {
-          detailedInvoices.push({
-            ...invoice,
-            details: detailResponse.data
+        try {
+          const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+          const detailResponse = await chrome.tabs.sendMessage(tab.id, {
+            action: 'getInvoiceDetails',
+            invoiceId: invoice.electronicNumber
           });
-        } else {
-          detailedInvoices.push(invoice);
+          
+          if (detailResponse && detailResponse.success) {
+            return {
+              ...invoice,
+              details: detailResponse.data
+            };
+          } else {
+            return invoice;
+          }
+        } catch (error) {
+          console.warn(`Failed to load details for invoice ${invoice.electronicNumber}:`, error);
+          return invoice;
         }
-      } catch (error) {
-        console.warn(`Failed to load details for invoice ${invoice.electronicNumber}:`, error);
-        detailedInvoices.push(invoice);
-      }
+      });
       
-      // Add small delay to avoid overwhelming the server
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Wait for current batch to complete
+      const batchResults = await Promise.all(batchPromises);
+      detailedInvoices.push(...batchResults);
+      
+      // Small delay between batches to avoid rate limiting
+      if (i + batchSize < invoices.length) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
     }
     
     return detailedInvoices;
